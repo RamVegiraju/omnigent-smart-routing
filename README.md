@@ -107,6 +107,15 @@ Your first typed message is what gets routed.
 Either way, a trivial first message runs on haiku; a complex one on opus. See
 **`try-these.md`**. When done: `omnigent stop`.
 
+> **Why two commands (and not one)?** The `llm:` judge block must be loaded by a
+> server, and `run.sh` keeps it in this repo's own `config.yaml` so a fresh clone
+> is self-contained. `omnigent claude` has **no `--config` flag**, and when it
+> auto-spawns a server it hardcodes `--config ~/.omnigent/config.yaml`
+> (`host/local_server.py:665`) — the *global* config, not this file. So a true
+> one-command run (`omnigent claude --smart-routing`) only routes when the `llm:`
+> block lives in your **global** config. The two-step keeps the demo hermetic and
+> reproducible; the single command is a personal-machine convenience.
+
 > **Model id note:** the native harness reports Unity Catalog ids
 > (`system.ai.claude-haiku-4-5`); the raw serving endpoints are
 > `databricks-claude-haiku-4-5`. Same models, different id namespace.
@@ -133,10 +142,14 @@ Expected (verified on 0.9.0): trivial → `databricks-claude-haiku-4-5`, complex
   outlive its OAuth token; the judge then calls the serving endpoint with an
   expired bearer. Fix: `omnigent stop` and restart the server so it mints a
   fresh token.
-- **`Denied by policy (policy evaluation error)`** — the server merges
-  `~/.omnigent/config.yaml`, so a misconfigured policy there fail-closes every
-  session even when `--config` points elsewhere. Check that file's `policies:`
-  block (or remove it) if routing picks a model but the run is denied.
+- **`Denied by policy (policy evaluation error)`** — a misconfigured `policies:`
+  block fail-closes every session. Note *which* config is read depends on how you
+  start: `omnigent server --config config.yaml` reads **only that file** (no merge
+  — `cli.py:3705`→`3762`), so this repo's server is hermetic. But the single-
+  command path (`omnigent claude`, which auto-spawns a server) reads the **global**
+  `~/.omnigent/config.yaml` (`host/local_server.py:665` appends
+  `--config global_config_path()`). If routing picks a model but the run is denied,
+  check the `policies:` block of whichever config that server loaded.
 - **Send button disabled / "No hosts"** — the web UI needs an online host and a
   working directory set. Start one with `omnigent host --server <url>` and pick
   the folder. (The CLI path spawns its own host, so it doesn't hit this.)
