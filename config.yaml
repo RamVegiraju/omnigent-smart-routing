@@ -1,0 +1,20 @@
+# Omnigent SERVER config for smart routing.
+# Loaded via:  omnigent server --config config.yaml   (run.sh does this)
+#
+# This one `llm:` block is the whole setup. It enables the BUILT-IN ("oss")
+# judge — no `routing:` block, no gateway. Verified on omnigent 0.9.0:
+#   - /v1/info reports smart_routing_sources: {external: false, oss: true}
+#   - orchestration.py:6693 _reject_ungatewayed_model_routing only rejects a
+#     routing session when NEITHER a gateway NOR an llm: model is available.
+#   - Docs: "Configure a server llm: block and the server uses the built-in
+#     judge backed by it, with no routing: block required."
+#     https://omnigent.ai/docs/build/routing
+#
+# The judge is a SEPARATE LLM connection from the coding harness (they don't
+# share auth). It only classifies each task (SIMPLE/MODERATE/COMPLEX,
+# smart_routing.py:504) and picks a model — it does NOT do the coding. Keep it
+# small/cheap. `model` is the only required field (spec/types.py LLMConfig);
+# `profile` names a ~/.databrickscfg profile.
+llm:
+  model: databricks-claude-haiku-4-5
+  profile: adb-984752964297111

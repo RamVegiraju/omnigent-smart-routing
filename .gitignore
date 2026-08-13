@@ -1,0 +1,8 @@
+# Local machine state / internal notes — not for the public repo
+.claude/
+CLAUDE.md
+
+# Python
+__pycache__/
+*.pyc
+.venv/
