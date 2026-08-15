@@ -4,17 +4,37 @@
 # This one `llm:` block is the whole setup. It enables the BUILT-IN ("oss")
 # judge — no `routing:` block, no gateway. Verified on omnigent 0.9.0:
 #   - /v1/info reports smart_routing_sources: {external: false, oss: true}
-#   - orchestration.py:6693 _reject_ungatewayed_model_routing only rejects a
+#   - orchestration.py _reject_ungatewayed_model_routing only rejects a
 #     routing session when NEITHER a gateway NOR an llm: model is available.
+#     (:6693 on 0.9.0; :7050 on main/0.10.0.dev0)
 #   - Docs: "Configure a server llm: block and the server uses the built-in
 #     judge backed by it, with no routing: block required."
 #     https://omnigent.ai/docs/build/routing
 #
-# The judge is a SEPARATE LLM connection from the coding harness (they don't
-# share auth). It only classifies each task (SIMPLE/MODERATE/COMPLEX,
+# THE SPLIT THIS DEMO SHOWCASES
+# -----------------------------
+# Coding harness : Claude Code on our CLAUDE SUBSCRIPTION. The models routing
+#                  picks among are the subscription's own (claude-haiku-4-5,
+#                  claude-sonnet-4-6, claude-opus-4-8, ...). No per-token cost.
+# Judge          : the cheap Databricks-served haiku below.
+#
+# These are two SEPARATE connections — they do not share auth. A Claude
+# subscription authenticates the coding harness only; it CANNOT authenticate
+# the judge, because _resolve_server_llm_connection (runtime/policies/builder.py)
+# accepts only `connection:` (base_url + api_key) or a Databricks `profile:`.
+# Hence the small Databricks credential here.
+#
+# The judge only classifies each task (SIMPLE/MODERATE/COMPLEX,
 # smart_routing.py:504) and picks a model — it does NOT do the coding. Keep it
 # small/cheap. `model` is the only required field (spec/types.py LLMConfig);
 # `profile` names a ~/.databrickscfg profile.
+#
+# ⚠️  SET `profile` TO YOUR OWN ~/.databrickscfg PROFILE BEFORE RUNNING.
+#     Run `databricks auth login --host https://<workspace> --profile <name>`
+#     first if the OAuth session has expired. Note that `profile` does NOT
+#     support ${ENV_VAR} expansion — the parser expands env vars only inside
+#     `connection:` / `api_key` / `base_url` (spec/parser.py:351, :738) — so
+#     this has to be a literal profile name.
 llm:
   model: databricks-claude-haiku-4-5
-  profile: adb-984752964297111
+  profile: <your-databricks-profile>

@@ -2,6 +2,9 @@
 .claude/
 CLAUDE.md
 
+# Server log written by run.sh
+.server.log
+
 # Python
 __pycache__/
 *.pyc

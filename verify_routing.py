@@ -8,6 +8,11 @@ Routes a TRIVIAL and a COMPLEX prompt and prints the judge's pick. Exercises
 the real source path (LLMRoutingClient, omnigent/server/smart_routing.py:566
 route()) without the TUI. Verified on omnigent 0.9.0: trivial -> haiku,
 complex -> opus.
+
+Note the split this demo showcases: the JUDGE runs on a cheap Databricks-served
+haiku (config.yaml `llm:`), while the models it routes ACROSS are the Claude
+Code subscription's own models. The subscription authenticates the coding
+harness; it cannot authenticate the judge (see README).
 """
 
 import asyncio
@@ -25,13 +30,18 @@ CONFIG = "config.yaml"
 HARNESS = "claude-sdk"
 
 # At run time the candidate list comes from the LIVE runner catalog
-# (/v1/sessions/{id}/models, fetched at smart_routing.py:395). For this offline
-# judge test we pass the same three claude endpoints directly, ordered
-# cheapest -> most capable, exactly as the runner reports them.
+# (/v1/sessions/{id}/models, fetched at smart_routing.py:395). Because the
+# coding harness here is Claude Code on a CLAUDE SUBSCRIPTION, that catalog is
+# the curated subscription listing (model_catalog.py:_static_subscription_listing
+# -> model_fallbacks.static_model_fallback("subscription", "claude")), which is
+# plain Anthropic model ids -- NOT databricks-* serving endpoints.
+#
+# For this offline judge test we pass three of them directly, ordered
+# cheapest -> most capable, as the runner reports them.
 CANDIDATE_MODELS = [
-    "databricks-claude-haiku-4-5",
-    "databricks-claude-sonnet-4-6",
-    "databricks-claude-opus-4-8",
+    "claude-haiku-4-5",
+    "claude-sonnet-4-6",
+    "claude-opus-4-8",
 ]
 
 PROMPTS = {
