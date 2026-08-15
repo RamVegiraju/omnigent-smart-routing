@@ -26,8 +26,7 @@ message on it."* (Subscription-backed harnesses report plain Anthropic ids.)
 
 Classified `COMPLEX` → the last (most capable) model, e.g. `claude-opus-4-8`.
 
-Both run on our **Claude subscription** — only the judge that picks between them
-talks to Databricks.
+Both run on the Claude subscription; only the judge talks to Databricks.
 
 ## Not seeing routing?
 

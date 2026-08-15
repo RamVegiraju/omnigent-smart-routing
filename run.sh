@@ -7,32 +7,21 @@
 #    that enables the built-in OSS router). Does not touch ~/.omnigent/config.yaml.
 # 2. Launches the Claude Code TUI with `--smart-routing`.
 #
-# The coding runs on your CLAUDE SUBSCRIPTION; only the judge talks to
+# The coding runs on the Claude subscription; only the judge talks to
 # Databricks. See README.
 #
-# `omnigent claude --smart-routing` is the source-documented entry point
-# (smart_routing_cli.py): it creates the session with cost_control_mode_override
-# ="on" (smart_routing_cli.py:225) bound to the harness's own built-in wrapper
-# agent, and your FIRST typed message is what gets routed. No custom agent
-# needed — "Smart Routing rides on the session row, not the agent"
-# (smart_routing_cli.py:_routing_agent_id).
+# `omnigent claude --smart-routing` creates the session with
+# cost_control_mode_override="on" (smart_routing_cli.py:225), bound to the
+# harness's own wrapper agent. The first typed message is what gets routed.
 #
 # Routing is decided once per session on the first message (orchestration.py:4615
-# on 0.9.0, :4845 on main), so to see haiku vs. opus, exit and re-run for each
-# prompt. See try-these.md.
+# on 0.9.0, :4845 on main); exit and re-run for each prompt. See try-these.md.
 #
-# ── WHY NOT `--background`? ──────────────────────────────────────────────────
-# Do NOT use `omnigent server --background` here. On 0.9.0 the `--background`
-# path calls `_run_background_server()` (cli.py:4111), which takes NO arguments
-# and silently DISCARDS both `--config` and `--port`: it spawns the *managed*
-# local server against ~/.omnigent/config.yaml on the default port instead.
-# That config has no `llm:` block, so the judge never loads and routing is
-# silently OFF — `/v1/info` reports smart_routing_enabled:false, oss:false, and
-# the TUI just runs on the default model with no error.
-#
-# Verified: `--config ... --port 6799 --background` reports port 6767 and
-# oss:false; the same config in the FOREGROUND reports oss:true. So we run the
-# server in the foreground and background it with the shell instead.
+# Do NOT use `omnigent server --background`: it discards `--config` and `--port`
+# and starts the managed server against ~/.omnigent/config.yaml, which has no
+# `llm:` block, leaving routing off with no error (_run_background_server(),
+# cli.py:4111). The server runs in the foreground here, backgrounded by the
+# shell.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

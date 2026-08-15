@@ -13,32 +13,29 @@ pin a model or list candidates.
 **Further reading:** [official routing docs][docs] · [Databricks Smart Routing
 blog][blog] · [Omnigent launch post][intro] · [source repo][repo]
 
-Omnigent routes both the **model** (what this repo configures) and the
-**harness** itself — see [Harness routing](#harness-routing-supported).
+Omnigent routes the **model** (configured here) and the **harness** — see
+[Harness routing](#harness-routing).
 
-## What this demo routes across
+## What it routes across
 
-This setup routes across a **Claude Code subscription**. Two separate
-connections are in play, and keeping them straight is the whole trick:
+Routing runs across a **Claude Code subscription**, over two separate
+connections:
 
-| | What it is | Auth |
+| | Role | Auth |
 |---|---|---|
-| **Coding harness** | Claude Code, doing the actual work. Routing picks among the **subscription's own models** — `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-8`, … | Our **Claude subscription** (no per-token cost) |
-| **Judge** | A cheap classifier that reads your first message, labels it `SIMPLE`/`MODERATE`/`COMPLEX`, and picks one of the above. Does **no** coding. | A small **Databricks** credential |
+| **Coding harness** | Claude Code. Routing picks among the subscription's models — `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-8`, … | Claude subscription |
+| **Judge** | Classifies the first message `SIMPLE`/`MODERATE`/`COMPLEX` and picks one of the above. Does no coding. | Databricks credential |
 
 > [!IMPORTANT]
-> A Claude subscription authenticates the **coding harness only — it cannot
-> authenticate the judge.** `_resolve_server_llm_connection`
-> (`runtime/policies/builder.py`) accepts only a `connection:` block
-> (`base_url` + `api_key`) or a Databricks `profile:`; with neither it falls
-> back to `ANTHROPIC_API_KEY` in the environment. That is why the judge below
-> carries its own Databricks credential even though the coding runs on the
-> subscription.
+> A Claude subscription authenticates the coding harness only — **not** the
+> judge, which needs its own credential. `_resolve_server_llm_connection`
+> (`runtime/policies/builder.py`) accepts a `connection:` block
+> (`base_url` + `api_key`) or a Databricks `profile:`, otherwise falling back
+> to `ANTHROPIC_API_KEY`.
 
-Because the harness is subscription-backed, the candidate list is the curated
-subscription listing (`model_catalog.py` `_static_subscription_listing` →
-`static_model_fallback("subscription", "claude")`) — **plain Anthropic model
-ids, not `databricks-*` serving endpoints.**
+Subscription-backed harnesses report the curated subscription listing
+(`model_catalog.py` `_static_subscription_listing`) — plain Anthropic model ids,
+not `databricks-*` serving endpoints.
 
 ## The setup: one `llm:` block
 
@@ -87,9 +84,8 @@ does not do the coding. Set `profile` to a profile in your `~/.databrickscfg`.
 ~/.local/share/uv/tools/omnigent/bin/python verify_routing.py
 ```
 
-Do this first. If it fails, the problem is your judge credential, not routing —
-which saves you debugging a TUI that was never going to work. Expected output is
-in [Verify (no UI)](#verify-no-ui).
+Run this first — it isolates a judge-credential failure from a routing failure.
+Expected output: [Verify (no UI)](#verify-no-ui).
 
 ### Step 1a — the TUI (one terminal)
 
@@ -148,7 +144,7 @@ New chat per prompt, same as the TUI.
 > [!TIP]
 > The harness picker also offers a top-level **"Auto · smart routing"** row.
 > Picking that routes the **harness as well as the model** — see
-> [Harness routing](#harness-routing-supported) below.
+> [Harness routing](#harness-routing) below.
 
 ### Step 2 — confirm routing is actually on
 
@@ -179,27 +175,19 @@ omnigent stop      # or Ctrl-C the foreground server
 ```
 
 > [!WARNING]
-> **Never add `--background`.** On 0.9.0, `omnigent server --background` routes
-> to `_run_background_server()` (`cli.py:4111`), which takes **no arguments**
-> and silently discards both `--config` and `--port` — it starts the *managed*
-> server against `~/.omnigent/config.yaml` instead. That file has no `llm:`
-> block, so the judge never loads and **routing is silently off**, with no
-> error. Verified: `--config … --port 6799 --background` reports port `6767`
-> and `oss:false`, while the identical config in the foreground reports
-> `oss:true`. The [official docs][docs] likewise show the foreground form,
-> `omni server -c path/to/config.yaml`.
+> **Do not add `--background`.** On 0.9.0 it discards `--config` and `--port`
+> and starts the managed server against `~/.omnigent/config.yaml`, which has no
+> `llm:` block — routing is off, with no error
+> (`_run_background_server()`, `cli.py:4111`). The [docs][docs] use the
+> foreground form, `omni server -c path/to/config.yaml`.
 
 > **Why start the server explicitly?** The `llm:` judge block lives in this
-> repo's `config.yaml`, so `run.sh` starts the server against it — keeping the
-> demo **hermetic** (self-contained: works on any clone, reads no global config).
-> `omnigent claude` has no `--config` flag; on its own it reads your global
-> `~/.omnigent/config.yaml` instead, which a fresh clone won't have.
+> repo's `config.yaml`. `omnigent claude` has no `--config` flag and reads the
+> global `~/.omnigent/config.yaml`, which a fresh clone won't have.
 
-## Did it work? Inspecting the routing decision
+## Inspecting the routing decision
 
-The routed pick is stamped onto the session row, so you can verify a run after
-the fact without reading logs. Omnigent stores sessions in a SQLite DB at
-`~/.omnigent/chat.db`:
+The routed pick is stamped onto the session row in `~/.omnigent/chat.db`:
 
 ```bash
 sqlite3 ~/.omnigent/chat.db \
@@ -209,67 +197,49 @@ sqlite3 ~/.omnigent/chat.db \
     ORDER BY created_at DESC LIMIT 5;"
 ```
 
-A routed session looks like this — one trivial, one complex, from two web-UI
-sessions two minutes apart:
-
 ```
 2026-08-15 13:40:14|Describe Repository Files|{"model_override":"haiku","cost_control_mode_override":"on","subagent_routing_override":"on"}
 2026-08-15 13:42:38|Design Mobile App System Architecture|{"model_override":"opus","cost_control_mode_override":"on","subagent_routing_override":"on"}
 ```
 
-- `cost_control_mode_override: "on"` — Smart Routing was armed for this session.
-- `model_override` — **the judge's pick, applied to the session.** This is the
-  authoritative signal; upstream's own e2e test asserts exactly this field
-  (`tests/e2e/routing/test_claude_ui_smart_routing_e2e.py`:
-  `assert same_arm(snapshot.get("model_override"), decision["model"])`).
-- `subagent_routing_override: "on"` — sub-agent launches route independently too,
-  the behavior described in the [Databricks blog][blog].
-
-The alias form (`haiku`/`opus` rather than `claude-haiku-4-5`) is Claude Code's
-own model naming, which is what a **subscription-backed** harness reports.
-
-Related tables, if you want to dig further:
-
-| Table | Useful columns |
+| Field | Meaning |
 |---|---|
-| `conversations` | `session_overrides` (routing decision), `title`, `created_at` |
-| `conversation_items` | one row per message — confirms the session actually ran |
-| `omnigent_conversation_metadata` | `workspace` (the directory the agent ran in), `session_usage` (per-model token + cost totals) |
+| `cost_control_mode_override` | `"on"` — Smart Routing armed for this session |
+| `model_override` | the routed pick, applied to the session |
+| `subagent_routing_override` | `"on"` — sub-agent launches route independently |
 
-## Harness routing (supported)
+`model_override` is the field upstream's own test asserts on
+(`tests/e2e/routing/test_claude_ui_smart_routing_e2e.py`). Subscription-backed
+harnesses report Claude Code's aliases (`haiku`, `opus`) rather than full ids.
 
-Everything above routes the **model** inside Claude Code. Omnigent also routes
-the **harness itself** — Claude Code vs Codex vs Pi — which is the headline
-capability of the [Databricks blog][blog] announcement.
-
-Turn it on by picking the top-level **"Auto · smart routing"** row in the web-UI
-harness picker instead of Claude Code. The [official docs][docs] describe this as
-the per-session activation path: *"With a router configured, users see an **Auto**
-option in the harness picker; picking it defers harness + model selection to the
-router on the first message."*
-
-Confirmed present in `omnigent 0.9.0`:
-
-| What | Where |
+| Table | Columns |
 |---|---|
-| `harness_override="auto"` handling | `server/routes/_sessions/orchestration.py:4537`, `:6921`, `:7458` |
-| The durable auto-harness label | `runner/subagent_routing.py:116` `AUTO_HARNESS_LABEL_KEY = "omnigent.routing.auto_harness"` |
-| Harness resolution in the judge's verdict | `server/smart_routing.py` — `route()` returns a `harness` alongside the model |
-| End-to-end coverage | `tests/e2e/routing/test_auto_harness_smart_routing_e2e.py` (model-only is `test_claude_ui_smart_routing_e2e.py`) |
+| `conversations` | `session_overrides`, `title`, `created_at` |
+| `conversation_items` | one row per message |
+| `omnigent_conversation_metadata` | `workspace`, `session_usage` (per-model tokens + cost) |
 
-Two things worth knowing:
+## Harness routing
 
-- **It does not require the AI Gateway.** The built-in OSS judge returns a
-  harness as well as a model, so `provider: external` is not needed.
-- **It needs more than one vendor credential to be meaningful.** Auto picks
-  *across* harnesses, so with only a Claude subscription configured the candidate
-  menu contains Claude arms only and Auto degenerates into model-only routing.
-  Add a second credential (a ChatGPT subscription or an OpenAI key) via
-  `omnigent setup` before demoing it.
+Omnigent routes the **harness** (Claude Code / Codex / Pi) as well as the model.
+This repo configures model routing; harness routing is enabled by selecting the
+top-level **"Auto · smart routing"** row in the web-UI harness picker.
 
-The Auto row is also the only context where cross-harness sub-agent spawns are
-legal — a routed spawn may land on the counterpart family
-(`test_auto_harness_smart_routing_e2e.py`).
+Requires credentials for more than one vendor — with only a Claude subscription
+the candidate menu contains Claude arms only. Add another via `omnigent setup`.
+
+Does not require the AI Gateway: the built-in judge returns a harness alongside
+the model.
+
+Reference:
+
+| | |
+|---|---|
+| `harness_override="auto"` | `server/routes/_sessions/orchestration.py:4537`, `:6921`, `:7458` |
+| Auto-harness label | `runner/subagent_routing.py:116` `AUTO_HARNESS_LABEL_KEY` |
+| Harness in the judge verdict | `server/smart_routing.py` `route()` |
+| Cross-harness sub-agent spawns | `tests/e2e/routing/test_auto_harness_smart_routing_e2e.py` |
+| Docs | [Smart routing][docs] |
+| Announcement | [Databricks blog][blog] |
 
 ## Verify (no UI)
 
@@ -277,7 +247,8 @@ legal — a routed spawn may land on the counterpart family
 ~/.local/share/uv/tools/omnigent/bin/python verify_routing.py
 ```
 
-Runs the real judge against your endpoint. Actual output on `omnigent 0.9.0`:
+Runs the judge against your endpoint, without a server or TUI. Output on
+`omnigent 0.9.0`:
 
 ```
 classifier llm : databricks-claude-haiku-4-5
@@ -294,9 +265,6 @@ candidate models (cheapest->most capable): ['claude-haiku-4-5', 'claude-sonnet-4
                injection pattern implementation, and comprehensive test writing); selected most capable
                model claude-opus-4-8.
 ```
-
-This is the fastest way to prove the judge works — it needs no server and no
-TUI, so it isolates a credential problem from a routing problem.
 
 ## Prerequisites
 
@@ -332,54 +300,31 @@ TUI, so it isolates a credential problem from a routing problem.
 | `verify_routing.py` | Headless check: runs the real judge against your endpoint |
 | `try-these.md` | Trivial vs. complex first-message prompts |
 
-## Scope & best practices
+## Routing modes
 
-### What this demo is (and isn't)
-
-Omnigent exposes smart routing at **two** levels. This demo is deliberately the
-first — "basic" routing on a Claude subscription:
-
-| | Routes | How you turn it on | Configured here |
+| Mode | Routes | Enable with | Here |
 |---|---|---|---|
-| **Model-only** | The model, within Claude Code | `omnigent claude --smart-routing`, or ⚙️ → Model → Smart Routing | ✅ yes |
-| **Harness + model** | *Both* the harness (Claude Code / Codex / …) and the model | The top-level **"Auto · smart routing"** harness row (`harness_override="auto"`) | Supported, not wired up — see [Harness routing](#harness-routing-supported) |
+| Model | The model, within Claude Code | `omnigent claude --smart-routing`, or ⚙️ → Model → Smart Routing | ✅ |
+| Harness + model | The harness and the model | **"Auto · smart routing"** harness row (`harness_override="auto"`) | see [Harness routing](#harness-routing) |
 
-**Both are supported by Omnigent.** This repo simply configures the first,
-because the goal is basic model routing on a Claude subscription. The Auto row
-is not reachable from `omnigent claude --smart-routing` — there is no `auto`
-path in `smart_routing_cli.py` — so it is a web-UI flow.
+Auto is a web-UI flow; `smart_routing_cli.py` has no `auto` path.
 
-> [!NOTE]
-> **The blog's cost numbers are not this demo's.** "65% of the cost per task"
-> and "frontier quality at 30%+ lower cost" describe the **Unity AI Gateway**
-> external router (`routing: provider: external`, `router_name: task_v0`)
-> measured on Databricks' internal and public coding benchmarks. This demo runs
-> the **built-in OSS judge** — no gateway, no benchmark behind it. Don't quote
-> those figures for this setup.
+The routers are also distinct: this repo uses the **built-in judge**. The Unity
+AI Gateway router (`routing: provider: external`) is a separate backend, and the
+cost figures in the [blog][blog] describe that one. See [routing docs][docs].
 
-### Practices worth keeping
+## Practices
 
-- **Keep the judge small, cheap, and fast.** The blog calls for "a lightweight,
-  low-latency model," and the implementation agrees: `ROUTING_REQUEST_TIMEOUT_S
-  = 9.0`, one attempt, **no retry** — "on an interactive path a second try only
-  doubles the stall." `haiku` is the right class of model here.
-- **Routing is fail-open, so verify it explicitly.** If the judge errors or
-  times out, `route()` returns `None` and the session quietly runs on the
-  harness's default model — you get no error. That is why `run.sh` gates on
-  `/v1/info` and why `verify_routing.py` exists. **Never assume routing is on
-  because nothing broke.**
-- **One decision per session — so keep sessions small.** The pick is made on the
-  first message and reused. The blog names this as a known limitation
-  ("sessions often get reused, making initial routing decisions stale") and
-  recommends "designing smaller sessions." Start a new session per task rather
-  than steering one long one.
-- **Front-load detail in the first message.** The router sees only the opening
-  prompt — no test results, no repo state. The blog: "opening prompts are rarely
-  precise," since developers describe symptoms. A first message that states the
-  scope gets a better pick than one that reveals it three turns in.
-- **Track the outcome, not just the routing.** The blog's suggested measures:
-  distribution of sessions across models, end-to-end completion rate, and
-  dollars saved. A cheap model chosen badly costs more than it saves.
+- **Keep the judge small and fast.** `ROUTING_REQUEST_TIMEOUT_S = 9.0`, one
+  attempt, no retry (`server/smart_routing.py`).
+- **Verify routing explicitly.** It is fail-open: on error or timeout `route()`
+  returns `None` and the session runs on the harness default with no error.
+  `run.sh` gates on `/v1/info`; `verify_routing.py` checks the judge directly.
+- **One decision per session.** Start a new session per task.
+- **Front-load detail in the first message.** The judge sees only the opening
+  prompt — no test results, no repo state.
+- **Track model distribution, completion rate, and spend**, not just that
+  routing fired.
 
 ## Adapting it
 

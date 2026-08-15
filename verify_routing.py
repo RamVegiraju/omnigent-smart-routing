@@ -4,15 +4,12 @@ Reproduces the wiring omnigent/cli.py:_build_local_llm_routing_client uses:
     parse_server_llm -> _resolve_server_llm_connection ->
     _build_policy_llm_client -> LLMRoutingClient(...).route(msg, models)
 
-Routes a TRIVIAL and a COMPLEX prompt and prints the judge's pick. Exercises
-the real source path (LLMRoutingClient, omnigent/server/smart_routing.py:566
-route()) without the TUI. Verified on omnigent 0.9.0: trivial -> haiku,
-complex -> opus.
+Routes a TRIVIAL and a COMPLEX prompt and prints the judge's pick, exercising
+LLMRoutingClient (omnigent/server/smart_routing.py:566 route()) without the TUI.
+On omnigent 0.9.0: trivial -> haiku, complex -> opus.
 
-Note the split this demo showcases: the JUDGE runs on a cheap Databricks-served
-haiku (config.yaml `llm:`), while the models it routes ACROSS are the Claude
-Code subscription's own models. The subscription authenticates the coding
-harness; it cannot authenticate the judge (see README).
+The judge runs on the Databricks-served haiku in config.yaml `llm:`; the models
+it routes across are the Claude Code subscription's. See README.
 """
 
 import asyncio
@@ -29,15 +26,13 @@ from omnigent.server.smart_routing import LLMRoutingClient
 CONFIG = "config.yaml"
 HARNESS = "claude-sdk"
 
-# At run time the candidate list comes from the LIVE runner catalog
-# (/v1/sessions/{id}/models, fetched at smart_routing.py:395). Because the
-# coding harness here is Claude Code on a CLAUDE SUBSCRIPTION, that catalog is
-# the curated subscription listing (model_catalog.py:_static_subscription_listing
-# -> model_fallbacks.static_model_fallback("subscription", "claude")), which is
-# plain Anthropic model ids -- NOT databricks-* serving endpoints.
+# At run time the candidate list comes from the live runner catalog
+# (/v1/sessions/{id}/models, smart_routing.py:395). For a subscription-backed
+# harness that is the curated subscription listing
+# (model_catalog.py:_static_subscription_listing) -- plain Anthropic model ids,
+# not databricks-* serving endpoints.
 #
-# For this offline judge test we pass three of them directly, ordered
-# cheapest -> most capable, as the runner reports them.
+# This offline check passes three directly, ordered cheapest -> most capable.
 CANDIDATE_MODELS = [
     "claude-haiku-4-5",
     "claude-sonnet-4-6",
